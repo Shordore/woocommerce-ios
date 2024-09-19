@@ -1,7 +1,0 @@
-{
-    "code": "unauthorized",
-    "message": "You do not have permission to launch this site.",
-    "data": {
-        "status": 403
-    }
-}

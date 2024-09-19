@@ -1,4 +1,0 @@
-Di versi ini, iklan Blaze didukung kampanye yang terus aktif. Kami telah memperbaiki beberapa bug dalam pengeditan produk, terutama seputar harga, dan kini mendukung produk berharga negatif.
-
-Kami telah memperbaiki masalah penggunaan menu dengan VoiceOver atau teknologi bantuan, dan beberapa bug yang membuat judul hilang dan tombol tidak responsif.
-

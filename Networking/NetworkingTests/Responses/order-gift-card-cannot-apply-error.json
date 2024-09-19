@@ -1,4 +1,0 @@
-{
-  "error" : "woocommerce_rest_gift_card_cannot_apply",
-  "message" : "Requested amount for gift card code Z exceeded the order total."
-}

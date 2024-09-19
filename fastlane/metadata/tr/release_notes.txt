@@ -1,4 +1,0 @@
-Bu sürümde Blaze reklamlarına Evergreen kampanya desteği geliyor. Ürün düzenleme, özellikle fiyatlar bölümünde bazı hataları düzelttik ve artık negatif fiyatlandırılmış ürünleri destekliyoruz!
-
-VoiceOver ve yardımcı teknoloji ile menüyü kullanmakla ilgili bir sorunu ve başlıkların yok olup düğmelerin yanıt vermez hale gelmesine neden olan bazı hataları düzelttik.
-
