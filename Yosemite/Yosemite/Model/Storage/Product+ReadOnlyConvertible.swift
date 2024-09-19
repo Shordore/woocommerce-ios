@@ -193,8 +193,7 @@ extension Storage.Product: ReadOnlyConvertible {
                        minAllowedQuantity: minAllowedQuantity,
                        maxAllowedQuantity: maxAllowedQuantity,
                        groupOfQuantity: groupOfQuantity,
-                       combineVariationQuantities: combineVariationQuantities?.boolValue,
-                       customFields: []) //TODO: to be implemented in storage layer
+                       combineVariationQuantities: combineVariationQuantities?.boolValue)
     }
 
     // MARK: - Private Helpers

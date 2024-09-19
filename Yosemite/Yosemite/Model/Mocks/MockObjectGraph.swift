@@ -323,8 +323,7 @@ extension MockObjectGraph {
             minAllowedQuantity: nil,
             maxAllowedQuantity: nil,
             groupOfQuantity: nil,
-            combineVariationQuantities: nil,
-            customFields: []
+            combineVariationQuantities: nil
         )
     }
 }

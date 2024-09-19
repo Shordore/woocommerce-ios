@@ -201,7 +201,6 @@ public extension Product {
                   minAllowedQuantity: nil,
                   maxAllowedQuantity: nil,
                   groupOfQuantity: nil,
-                  combineVariationQuantities: nil,
-                  customFields: [])
+                  combineVariationQuantities: nil)
     }
 }

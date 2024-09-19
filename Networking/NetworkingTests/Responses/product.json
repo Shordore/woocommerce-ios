@@ -336,11 +336,6 @@
                         }
                     ]
                 },
-                {
-                    "id": 6000,
-                    "key": "just_a_custom_field",
-                    "value": "10"
-                }
             ],
             "composite_virtual": false,
             "composite_layout": "",
