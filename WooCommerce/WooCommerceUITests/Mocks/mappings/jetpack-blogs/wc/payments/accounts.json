@@ -1,0 +1,40 @@
+{
+    "request": {
+        "method": "GET",
+        "urlPath": "/rest/v1.1/jetpack-blogs/161477129/rest-api/",
+        "queryParameters": {
+            "json": {
+                "equalTo": "true"
+            },
+            "path": {
+                "equalTo": "/wc/v3/payments/accounts&_method=get"
+            }
+        }
+    },
+    "response": {
+        "status": 200,
+        "jsonBody": {
+            "data": {
+                "is_live": false,
+                "has_pending_requirements": false,
+                "has_overdue_requirements": false,
+                "current_deadline": null,
+                "status": "complete",
+                "statement_descriptor": "",
+                "store_currencies": {
+                    "default": "usd",
+                    "supported": [
+                        "usd"
+                    ]
+                },
+                "country": "US",
+                "card_present_eligible": false,
+                "test_mode": true
+            }
+        },
+        "headers": {
+            "Content-Type": "application/json",
+            "Connection": "keep-alive"
+        }
+    }
+}

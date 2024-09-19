@@ -1,0 +1,1498 @@
+# frozen_string_literal: true
+
+default_platform(:ios)
+fastlane_require 'dotenv'
+fastlane_require 'git'
+
+UI.user_error!('Please run fastlane via `bundle exec`') unless FastlaneCore::Helper.bundler?
+
+USER_ENV_FILE_PATH = File.join(Dir.home, '.wcios-env.default')
+SECRETS_DIR = File.join(Dir.home, '.configure', 'woocommerce-ios', 'secrets')
+PROJECT_ENV_FILE_PATH = File.join(SECRETS_DIR, 'project.env')
+
+GITHUB_REPO = 'woocommerce/woocommerce-ios'
+DEFAULT_BRANCH = 'trunk'
+
+# Constants
+PROJECT_ROOT_FOLDER = File.dirname(File.expand_path(__dir__))
+RESOURCES_FOLDER = File.join(PROJECT_ROOT_FOLDER, 'WooCommerce', 'Resources')
+PUBLIC_CONFIG_FILE = File.join(PROJECT_ROOT_FOLDER, 'config', 'Version.Public.xcconfig')
+RELEASE_NOTES_PATH = File.join(RESOURCES_FOLDER, 'release_notes.txt')
+RELEASE_NOTES_SOURCE_PATH = File.join(PROJECT_ROOT_FOLDER, 'RELEASE-NOTES.txt')
+FASTLANE_DIR = File.join(PROJECT_ROOT_FOLDER, 'fastlane')
+DERIVED_DATA_DIR = File.join(FASTLANE_DIR, 'DerivedData')
+SCREENSHOTS_DIR =  File.join(FASTLANE_DIR, 'screenshots')
+FASTLANE_METADATA_FOLDER = File.join(FASTLANE_DIR, 'metadata')
+WORKSPACE_PATH = File.join(PROJECT_ROOT_FOLDER, 'WooCommerce.xcworkspace')
+IOS_LOCALES = %w[ar de-DE en-US es-ES fr-FR he id it ja ko nl-NL pt-BR ru sv tr zh-Hans zh-Hant].freeze
+SIMULATOR_VERSION = '15.5' # For screenshots
+SCREENSHOTS_SCHEME = 'WooCommerceScreenshots'
+SCREENSHOT_DEVICES = [
+  'iPhone 11 Pro Max',
+  'iPhone 8 Plus',
+  'iPad Pro (12.9-inch) (2nd generation)',
+  'iPad Pro (12.9-inch) (3rd generation)'
+].freeze
+
+# Instantiate versioning classes
+VERSION_CALCULATOR = Fastlane::Wpmreleasetoolkit::Versioning::MarketingVersionCalculator.new
+VERSION_FORMATTER = Fastlane::Wpmreleasetoolkit::Versioning::FourPartVersionFormatter.new
+BUILD_CODE_FORMATTER = Fastlane::Wpmreleasetoolkit::Versioning::FourPartBuildCodeFormatter.new
+BUILD_CODE_KEY = 'VERSION_LONG'
+VERSION_FILE = Fastlane::Wpmreleasetoolkit::Versioning::IOSVersionFile.new(xcconfig_path: PUBLIC_CONFIG_FILE)
+
+APP_STORE_VERSION_BUNDLE_IDENTIFIER = 'com.automattic.woocommerce'
+# Registered in our main account, for development and App Store
+MAIN_BUNDLE_IDENTIFIERS = [
+  APP_STORE_VERSION_BUNDLE_IDENTIFIER,
+  "#{APP_STORE_VERSION_BUNDLE_IDENTIFIER}.storewidgets",
+  "#{APP_STORE_VERSION_BUNDLE_IDENTIFIER}.notificationcontentextension",
+  "#{APP_STORE_VERSION_BUNDLE_IDENTIFIER}.watchkitapp",
+  "#{APP_STORE_VERSION_BUNDLE_IDENTIFIER}.watchkitapp.widgets"
+].freeze
+
+ALPHA_VERSION_BUNDLE_IDENTIFIER = 'com.automattic.alpha.woocommerce'
+# Registered in our Enterprise account, for App Center / Prototype Builds
+ALPHA_BUNDLE_IDENTIFIERS = MAIN_BUNDLE_IDENTIFIERS.map do |id|
+  id.gsub(APP_STORE_VERSION_BUNDLE_IDENTIFIER, ALPHA_VERSION_BUNDLE_IDENTIFIER)
+end.freeze
+
+# Shared options to use when invoking `gym` / `build_app`.
+#
+# - `manageAppVersionAndBuildNumber: false` prevents `xcodebuild` from bumping
+#   the build number when extracting an archive into an IPA file. We want to
+#   use the build number we set!
+COMMON_EXPORT_OPTIONS = { manageAppVersionAndBuildNumber: false }.freeze
+
+TEST_SCHEME = 'WooCommerce'
+
+CONCURRENT_SIMULATORS = 2
+
+# List of `.strings` files manually maintained by developers (as opposed to being automatically extracted from the code)
+# which we will merge into the main `Localizable.strings` file imported by GlotPress, then extract back once we download the translations.
+#
+# Each `.strings` file to be merged/extracted is associated with a prefix to add to the keys, used to avoid conflicts and differentiate the source of the copies.
+#
+# See calls to `ios_merge_strings_files` and `ios_extract_keys_from_strings_files` for usage.
+#
+# Note that, yes, we currently have only one file, but it's still worth defining this constant because it's used across more than one lane, as described above.
+#
+MANUALLY_MAINTAINED_STRINGS_FILES = {
+  File.join(RESOURCES_FOLDER, 'en.lproj', 'InfoPlist.strings') => 'infoplist.'
+}.freeze
+
+# URL of the GlotPress project containing the strings used in the app
+GLOTPRESS_APP_STRINGS_PROJECT_URL = 'https://translate.wordpress.com/projects/woocommerce/woocommerce-ios/'
+# URL of the GlotPress project containing App Store Connect metadata
+GLOTPRESS_APP_STORE_METADATA_PROJECT_URL = 'https://translate.wordpress.com/projects/woocommerce/woocommerce-ios/release-notes/'
+
+# List of locales used for the app strings (GlotPress code => `*.lproj` folder name`)
+#
+# TODO: Replace with `LocaleHelper` once provided by release toolkit (https://github.com/wordpress-mobile/release-toolkit/pull/296)
+GLOTPRESS_TO_LPROJ_APP_LOCALE_CODES = {
+  'ar' => 'ar',         # Arabic
+  'de' => 'de',         # German
+  'es' => 'es',         # Spanish
+  'fr' => 'fr',         # French
+  'he' => 'he',         # Hebrew
+  'id' => 'id',         # Indonesian
+  'it' => 'it',         # Italian
+  'ja' => 'ja',         # Japanese
+  'ko' => 'ko',         # Korean
+  'nl' => 'nl',         # Dutch
+  'pt-br' => 'pt-BR',   # Portuguese (Brazil)
+  'ru' => 'ru',         # Russian
+  'sv' => 'sv',         # Swedish
+  'tr' => 'tr',         # Turkish
+  'zh-cn' => 'zh-Hans', # Chinese (China)
+  'zh-tw' => 'zh-Hant'  # Chinese (Taiwan)
+}.freeze
+
+# Mapping of all locales which can be used for AppStore metadata (Glotpress code => AppStore Connect code)
+#
+# TODO: Replace with `LocaleHelper` once provided by release toolkit (https://github.com/wordpress-mobile/release-toolkit/pull/296)
+GLOTPRESS_TO_ASC_METADATA_LOCALE_CODES = {
+  'ar' => 'ar-SA',
+  'de' => 'de-DE',
+  'es' => 'es-ES',
+  'fr' => 'fr-FR',
+  'he' => 'he',
+  'id' => 'id',
+  'it' => 'it',
+  'ja' => 'ja',
+  'ko' => 'ko',
+  'nl' => 'nl-NL',
+  'pt-br' => 'pt-BR',
+  'ru' => 'ru',
+  'sv' => 'sv',
+  'tr' => 'tr',
+  'zh-cn' => 'zh-Hans',
+  'zh-tw' => 'zh-Hant'
+}.freeze
+
+ASC_KEY_PATH = File.join(SECRETS_DIR, 'app_store_connect_fastlane_api_key.json')
+
+# Use this instead of getting values from ENV directly
+# It will throw an error if the requested value is missing
+def get_required_env(key)
+  UI.user_error!("Environment variable '#{key}' is not set. Have you setup #{USER_ENV_FILE_PATH} correctly?") unless ENV.key?(key)
+  ENV.fetch(key)
+end
+
+before_all do |lane|
+  # Skip these checks/steps for test lane (not needed for testing)
+  next if lane == :test_without_building
+
+  # Check for Release Toolkit updates
+  check_for_toolkit_updates unless is_ci || ENV['FASTLANE_SKIP_TOOLKIT_UPDATE_CHECK']
+
+  # Check that the env files exist
+  UI.user_error!("~/.wcios-env.default not found: Please copy env/user.env-example to #{USER_ENV_FILE_PATH} and fill in the values") unless is_ci || File.file?(USER_ENV_FILE_PATH)
+  UI.user_error!('project.env not found: Make sure your configuration is up to date with `rake dependencies`') unless File.file?(PROJECT_ENV_FILE_PATH)
+
+  setup_ci
+end
+
+platform :ios do
+  ########################################################################
+  # Environment
+  ########################################################################
+  Dotenv.load(USER_ENV_FILE_PATH)
+  Dotenv.load(PROJECT_ENV_FILE_PATH)
+
+  ########################################################################
+  # Release Lanes
+  ########################################################################
+
+  # This lane executes the steps planned on code freeze, creating a new release branch from the current trunk
+  #
+  # @param [Boolean] skip_confirm (default: false) If set, will skip the confirmation prompt before running the rest of the lane
+  #
+  # @example Running the lane
+  #          bundle exec fastlane start_code_freeze skip_confirm:true
+  #
+  lane :start_code_freeze do |skip_confirm: false|
+    ensure_git_status_clean
+
+    # Check out the up-to-date default branch, the designated starting point for the code freeze
+    Fastlane::Helper::GitHelper.checkout_and_pull(DEFAULT_BRANCH)
+
+    # Checks if internal dependencies are on a stable version
+    check_pods_references
+
+    UI.important <<-MESSAGE
+
+      Code Freeze:
+      • New release branch from #{DEFAULT_BRANCH}: release/#{release_version_next}
+      • Current release version and build code: #{release_version_current} (#{build_code_current}).
+      • New release version and build code: #{release_version_next} (#{build_code_code_freeze}).
+
+    MESSAGE
+    UI.user_error!("Terminating as requested. Don't forget to run the remainder of this automation manually.") unless skip_confirm || UI.confirm('Do you want to continue?')
+
+    # Create the release branch
+    new_release_branch = "release/#{release_version_next}"
+    ensure_branch_does_not_exist!(new_release_branch)
+
+    UI.message('Creating release branch...')
+    Fastlane::Helper::GitHelper.create_branch(new_release_branch, from: DEFAULT_BRANCH)
+    UI.success("Done! New release branch is: #{git_branch}")
+
+    # Bump the release version and build code and write it to the `xcconfig` file
+    UI.message('Bumping release version and build code...')
+    VERSION_FILE.write(
+      version_short: release_version_next,
+      version_long: build_code_code_freeze
+    )
+    commit_version_bump
+    UI.success("Done! New Release Version: #{release_version_current}. New Build Code: #{build_code_current}")
+
+    new_version = release_version_current
+
+    extract_release_notes_for_version(
+      version: new_version,
+      release_notes_file_path: RELEASE_NOTES_SOURCE_PATH,
+      extracted_notes_file_path: RELEASE_NOTES_PATH
+    )
+    ios_update_release_notes(
+      new_version: new_version,
+      release_notes_file_path: RELEASE_NOTES_SOURCE_PATH
+    )
+
+    UI.important('Pushing changes to remote and configuring the release on GitHub')
+    UI.user_error!("Terminating as requested. Don't forget to run the remainder of this automation manually.") unless skip_confirm || UI.confirm('Do you want to continue?')
+
+    push_to_git_remote(tags: false)
+
+    # Protect release/* branch
+    copy_branch_protection(
+      repository: GITHUB_REPO,
+      from_branch: DEFAULT_BRANCH,
+      to_branch: "release/#{new_version}"
+    )
+
+    begin
+      # Move PRs to next milestone
+      moved_prs = update_assigned_milestone(
+        repository: GITHUB_REPO,
+        from_milestone: new_version,
+        to_milestone: release_version_next,
+        comment: "Version `#{new_version}` has now entered code-freeze, so the milestone of this PR has been updated to `#{release_version_next}`."
+      )
+
+      # Add ❄️ marker to milestone title to indicate we entered code-freeze
+      set_milestone_frozen_marker(
+        repository: GITHUB_REPO,
+        milestone: new_version
+      )
+    rescue StandardError => e
+      moved_prs = []
+
+      report_milestone_error(error_title: "Error freezing milestone `#{new_version}`: #{e.message}")
+    end
+
+    UI.message("Moved the following PRs to milestone #{release_version_next}: #{moved_prs.join(', ')}")
+
+    # Annotate the build with the moved PRs
+    moved_prs_info = if moved_prs.empty?
+                       "👍 No open PR were targeting `#{new_version}` at the time of code-freeze"
+                     else
+                       "#{moved_prs.count} PRs targeting `#{new_version}` were still open and thus moved to `#{release_version_next}`:\n" \
+                         + moved_prs.map { |pr_num| "[##{pr_num}](https://github.com/#{GITHUB_REPO}/pull/#{pr_num})" }.join(', ')
+                     end
+
+    buildkite_annotate(style: moved_prs.empty? ? 'success' : 'warning', context: 'start-code-freeze', message: moved_prs_info) if is_ci
+  end
+
+  #####################################################################################
+  # complete_code_freeze
+  # -----------------------------------------------------------------------------------
+  # This lane executes the initial steps planned on code freeze
+  # -----------------------------------------------------------------------------------
+  # Usage:
+  # bundle exec fastlane complete_code_freeze [skip_confirm:<skip confirm>]
+  #
+  # Example:
+  # bundle exec fastlane complete_code_freeze
+  # bundle exec fastlane complete_code_freeze skip_confirm:true
+  #####################################################################################
+  desc 'Creates a new release branch from the current trunk'
+  lane :complete_code_freeze do |options|
+    ensure_git_status_clean
+    ensure_git_branch_is_release_branch!
+
+    UI.important("Completing code freeze for: #{release_version_current}")
+    unless options[:skip_confirm] || UI.confirm('Do you want to continue?')
+      UI.user_error!("Terminating as requested. Don't forget to run the remainder of this automation manually.")
+    end
+
+    update_app_store_strings
+
+    generate_strings_file_for_glotpress
+
+    push_to_git_remote(tags: false)
+
+    trigger_beta_build(branch_to_build: "release/#{release_version_current}")
+
+    create_backmerge_pr
+  end
+
+  # Updates the `AppStoreStrings.pot` file with the latest content from the `release_notes.txt` files and the other text sources.
+  #
+  # @option [String] version The current `x.y[.z]` version of the app. Optional. Used to derive the `vx.y[.z]-whats-new` key to use in the `.pot` file.
+  #
+  desc 'Updates the AppStoreStrings.pot file with the latest data'
+  lane :update_app_store_strings do |options|
+    source_metadata_folder = File.join(FASTLANE_DIR, 'appstoreres', 'metadata', 'source')
+
+    files = {
+      whats_new: RELEASE_NOTES_PATH,
+      app_store_subtitle: File.join(source_metadata_folder, 'subtitle.txt'),
+      app_store_desc: File.join(source_metadata_folder, 'description.txt'),
+      app_store_keywords: File.join(source_metadata_folder, 'keywords.txt'),
+      'app_store_promo_text' => File.join(source_metadata_folder, 'app_store_promo_text.txt'),
+      'app_store_screenshot-1' => File.join(source_metadata_folder, 'promo_screenshot_1.txt'),
+      'app_store_screenshot-2' => File.join(source_metadata_folder, 'promo_screenshot_2.txt'),
+      'app_store_screenshot-3' => File.join(source_metadata_folder, 'promo_screenshot_3.txt'),
+      'app_store_screenshot-4' => File.join(source_metadata_folder, 'promo_screenshot_4.txt'),
+      'app_store_screenshot-5' => File.join(source_metadata_folder, 'promo_screenshot_5.txt')
+    }
+
+    ios_update_metadata_source(
+      po_file_path: File.join(RESOURCES_FOLDER, 'AppStoreStrings.pot'),
+      source_files: files,
+      release_version: options.fetch(:version, release_version_current)
+    )
+  end
+
+  #####################################################################################
+  # new_beta_release
+  # -----------------------------------------------------------------------------------
+  # This lane updates the release branch for a new beta release. It will update the
+  # current release branch by default.
+  # -----------------------------------------------------------------------------------
+  # Usage:
+  # bundle exec fastlane new_beta_release [skip_confirm:<skip confirm>]
+  #
+  # Example:
+  # bundle exec fastlane new_beta_release
+  # bundle exec fastlane new_beta_release skip_confirm:true
+  #####################################################################################
+  desc 'Updates a release branch for a new beta release'
+  lane :new_beta_release do |options|
+    ensure_git_status_clean
+    ensure_git_branch_is_release_branch!
+
+    UI.important <<-MESSAGE
+
+      Current build code: #{build_code_current}
+      New build code: #{build_code_next}
+
+    MESSAGE
+    unless options[:skip_confirm] || UI.confirm('Do you want to continue?')
+      UI.user_error!("Terminating as requested. Don't forget to run the remainder of this automation manually.")
+    end
+
+    # Download the latest translations from GlotPress
+    download_localized_strings_and_metadata_from_glotpress
+    lint_localizations
+
+    # Bump the build code
+    UI.message('Bumping build code...')
+    ensure_git_branch_is_release_branch!
+    VERSION_FILE.write(version_long: build_code_next)
+    commit_version_bump
+    UI.success("Done! New Build Code: #{build_code_current}")
+
+    UI.important('Pushing changes to remote and triggering the beta build')
+    unless options[:skip_confirm] || UI.confirm('Do you want to continue?')
+      UI.user_error!("Terminating as requested. Don't forget to run the remainder of this automation manually.")
+    end
+
+    push_to_git_remote(tags: false)
+
+    trigger_beta_build(branch_to_build: "release/#{release_version_current}")
+
+    create_backmerge_pr
+  end
+
+  #####################################################################################
+  # new_hotfix_release
+  # -----------------------------------------------------------------------------------
+  # This lane creates the release branch for a new hotfix release.
+  # -----------------------------------------------------------------------------------
+  # Usage:
+  # bundle exec fastlane new_hotfix_release [skip_confirm:<skip confirm>] [version:<version>]
+  #
+  # Example:
+  # bundle exec fastlane new_hotfix_release version:10.6.1
+  # bundle exec fastlane new_hotfix_release skip_confirm:true version:10.6.1
+  #####################################################################################
+  desc 'Creates a new hotfix branch for the given version:x.y.z. The branch will be cut from the tag x.y of the previous release'
+  lane :new_hotfix_release do |options|
+    # Verify that there's nothing in progress in the working copy
+    ensure_git_status_clean
+
+    new_version = options[:version] || UI.input('Version number for the new hotfix?')
+
+    # Parse the provided version into an AppVersion object
+    parsed_version = VERSION_FORMATTER.parse(new_version)
+    build_code_hotfix = BUILD_CODE_FORMATTER.build_code(version: parsed_version)
+    previous_version = VERSION_FORMATTER.release_version(VERSION_CALCULATOR.previous_patch_version(version: parsed_version))
+
+    # Check versions
+    UI.important <<-MESSAGE
+
+      New hotfix version: #{new_version}
+      New build code: #{build_code_hotfix}
+      Branching from tag: #{previous_version}
+
+    MESSAGE
+    unless options[:skip_confirm] || UI.confirm('Do you want to continue?')
+      UI.user_error!("Terminating as requested. Don't forget to run the remainder of this automation manually.")
+    end
+
+    # Check tags
+    UI.user_error!("Version #{new_version} already exists! Abort!") if git_tag_exists(tag: new_version)
+    UI.user_error!("Version #{previous_version} is not tagged! A hotfix branch cannot be created.") unless git_tag_exists(tag: previous_version)
+
+    # Create the hotfix branch
+    UI.message('Creating hotfix branch...')
+    Fastlane::Helper::GitHelper.create_branch("release/#{new_version}", from: previous_version)
+    UI.success("Done! New hotfix branch is: #{git_branch}")
+
+    # Bump the hotfix version and build code and write it to the `xcconfig` file
+    UI.message('Bumping hotfix version and build code...')
+    VERSION_FILE.write(
+      version_short: new_version,
+      version_long: build_code_hotfix
+    )
+    commit_version_bump
+
+    # Push the newly created hotfix branch
+    push_to_git_remote(tags: false)
+
+    UI.success("Done! New Release Version: #{release_version_current}. New Build Code: #{build_code_current}")
+  end
+
+  # This lane finalizes the hotfix branch, triggering a release build.
+  #
+  # @param [Boolean] skip_confirm (default: false) If set, will skip the confirmation prompt before running the rest of the lane
+  #
+  # @example Running the lane
+  #          bundle exec fastlane finalize_hotfix_release skip_confirm:true
+  #
+  lane :finalize_hotfix_release do |skip_confirm: false|
+    ensure_git_branch_is_release_branch!
+    ensure_git_status_clean
+
+    hotfix_version = release_version_current
+
+    UI.important("Triggering hotfix build for version: #{hotfix_version}")
+    UI.user_error!("Terminating as requested. Don't forget to run the remainder of this automation manually.") unless skip_confirm || UI.confirm('Do you want to continue?')
+
+    trigger_release_build(branch_to_build: "release/#{hotfix_version}")
+
+    create_backmerge_pr
+
+    # Close hotfix milestone
+    begin
+      close_milestone(
+        repository: GITHUB_REPO,
+        milestone: hotfix_version
+      )
+    rescue StandardError => e
+      report_milestone_error(error_title: "Error closing milestone `#{hotfix_version}`: #{e.message}")
+    end
+  end
+
+  #####################################################################################
+  # finalize_release
+  # -----------------------------------------------------------------------------------
+  # This lane finalize a release: updates store metadata, bump final version number,
+  # remove branch protection and close milestone, then trigger the final release on CI
+  # -----------------------------------------------------------------------------------
+  # Usage:
+  # bundle exec fastlane finalize_release [skip_confirm:<skip confirm>] [version:<version>]
+  #
+  # Example:
+  # bundle exec fastlane finalize_release
+  # bundle exec fastlane finalize_release skip_confirm:true
+  #####################################################################################
+  desc 'Trigger the final release build on CI'
+  lane :finalize_release do |skip_confirm: false|
+    UI.user_error!('To finalize a hotfix, please use the `finalize_hotfix_release` lane instead') if release_is_hotfix?
+
+    ensure_git_status_clean
+    ensure_git_branch_is_release_branch!
+
+    UI.important("Finalizing release: #{release_version_current}")
+    UI.user_error!("Terminating as requested. Don't forget to run the remainder of this automation manually.") unless skip_confirm || UI.confirm('Do you want to continue?')
+
+    # Don't check translation coverage in CI
+    check_translation_progress_all unless is_ci
+    download_localized_strings_and_metadata_from_glotpress
+    lint_localizations
+
+    # Bump the build code
+    UI.message('Bumping build code...')
+    VERSION_FILE.write(version_long: build_code_next)
+    commit_version_bump
+    UI.success("Done! New Build Code: #{build_code_current}")
+
+    # Start the build
+    UI.important('Pushing changes to remote and triggering the release build')
+    UI.user_error!("Terminating as requested. Don't forget to run the remainder of this automation manually.") unless skip_confirm || UI.confirm('Do you want to continue?')
+
+    push_to_git_remote(tags: false)
+
+    version = release_version_current
+
+    trigger_release_build(branch_to_build: "release/#{version}")
+
+    create_backmerge_pr
+
+    remove_branch_protection(
+      repository: GITHUB_REPO,
+      branch: "release/#{version}"
+    )
+
+    # Close milestone
+    begin
+      set_milestone_frozen_marker(
+        repository: GITHUB_REPO,
+        milestone: version,
+        freeze: false
+      )
+      close_milestone(
+        repository: GITHUB_REPO,
+        milestone: version
+      )
+    rescue StandardError => e
+      report_milestone_error(error_title: "Error closing milestone `#{version}`: #{e.message}")
+    end
+  end
+
+  lane :check_translation_progress_all do
+    check_translation_progress_strings
+    check_translation_progress_release_notes
+  end
+
+  lane :check_translation_progress_strings do
+    UI.message('Checking app strings translation status...')
+    check_translation_progress(
+      glotpress_url: GLOTPRESS_APP_STRINGS_PROJECT_URL,
+      abort_on_violations: false
+    )
+  end
+
+  lane :check_translation_progress_release_notes do
+    UI.message('Checking release notes strings translation status...')
+    check_translation_progress(
+      glotpress_url: GLOTPRESS_APP_STORE_METADATA_PROJECT_URL,
+      abort_on_violations: false
+    )
+  end
+
+  # This lane triggers a beta build on CI.
+  #
+  # @param [String] branch_to_build The git branch the CI build should run on.
+  #
+  # @example Running the lane
+  #          bundle exec fastlane trigger_beta_build branch_to_build:main
+  #
+  lane :trigger_beta_build do |branch_to_build:|
+    trigger_buildkite_release_build(
+      branch: branch_to_build,
+      beta: true
+    )
+  end
+
+  # This lane triggers a stable release build on CI.
+  #
+  # @param [String] branch_to_build The git branch the CI build should run on.
+  #
+  # @example Running the lane
+  #          bundle exec fastlane trigger_release_build branch_to_build:main
+  #
+  lane :trigger_release_build do |branch_to_build:|
+    trigger_buildkite_release_build(
+      branch: branch_to_build,
+      beta: false
+    )
+  end
+
+  #####################################################################################
+  # build_and_upload_to_app_store_connect
+  # -----------------------------------------------------------------------------------
+  # This lane builds the app and upload it for external distribution
+  # -----------------------------------------------------------------------------------
+  # Usage:
+  # bundle exec fastlane build_and_upload_to_app_store_connect [skip_confirm:<skip confirm>] [beta_release:<intermediate beta?>]
+  #
+  # Example:
+  # bundle exec fastlane build_and_upload_to_app_store_connect
+  # bundle exec fastlane build_and_upload_to_app_store_connect skip_confirm:true
+  # bundle exec fastlane build_and_upload_to_app_store_connect beta_release:true
+  #####################################################################################
+  desc 'Builds and uploads for distribution to the App Store'
+  lane :build_and_upload_to_app_store_connect do |options|
+    unless options[:skip_prechecks]
+      # Verify that there's nothing in progress in the working copy
+      ensure_git_status_clean unless is_ci
+
+      ios_build_preflight(derived_data_path: DERIVED_DATA_DIR)
+      xcversion # Ensure we're using the right version of Xcode, defined in `.xcode-version` file
+    end
+
+    ensure_sentry_installed
+
+    UI.important("Building version #{release_version_current} (#{build_code_current}) and uploading to TestFlight")
+    unless options[:skip_confirm] || UI.confirm('Do you want to continue?')
+      UI.user_error!("Terminating as requested. Don't forget to run the remainder of this automation manually.")
+    end
+
+    build_for_app_store_connect
+
+    sentry_upload_dsym(
+      auth_token: get_required_env('SENTRY_AUTH_TOKEN'),
+      org_slug: 'a8c',
+      project_slug: 'woocommerce-ios',
+      dsym_path: File.join(PROJECT_ROOT_FOLDER, 'WooCommerce.app.dSYM.zip')
+    )
+    sh('cd .. && rm WooCommerce.app.dSYM.zip')
+
+    archive_zip_path = File.join(File.dirname(Dir.pwd), 'WooCommerce.xarchive.zip')
+    zip(path: lane_context[SharedValues::XCODEBUILD_ARCHIVE], output_path: archive_zip_path)
+
+    version = options[:beta_release] ? build_code_current : release_version_current
+    create_release(
+      repository: GITHUB_REPO,
+      version: version,
+      release_notes_file_path: RELEASE_NOTES_PATH,
+      release_assets: archive_zip_path.to_s,
+      prerelease: options[:beta_release]
+    )
+    sh("rm #{archive_zip_path}")
+
+    upload_to_testflight(
+      api_key_path: ASC_KEY_PATH,
+      # Wait 2 hours for the build to process then time out
+      wait_processing_timeout_duration: 7200,
+      changelog: File.read(RELEASE_NOTES_PATH),
+      distribute_external: true,
+      # If there is a build waiting for beta review, we want to reject that so the new build can be submitted instead
+      reject_build_waiting_for_review: true,
+      groups: ['Internal a8c beta testers', 'Public Beta Testers']
+    )
+    sh('cd .. && rm WooCommerce.ipa')
+  end
+
+  desc 'Builds for distribution to the App Store'
+  lane :build_for_app_store_connect do
+    appstore_code_signing
+
+    gym(
+      scheme: 'WooCommerce',
+      workspace: WORKSPACE_PATH,
+      clean: true,
+      export_team_id: get_required_env('EXT_EXPORT_TEAM_ID'),
+      export_options: { **COMMON_EXPORT_OPTIONS, method: 'app-store' }
+    )
+  end
+
+  #####################################################################################
+  # build_and_upload_prototype_build
+  # -----------------------------------------------------------------------------------
+  # This lane builds the app and upload it for adhoc testing
+  # -----------------------------------------------------------------------------------
+  # Usage:
+  # bundle exec fastlane build_and_upload_prototype_build [version_long:<version_long>]
+  #
+  # Example:
+  # bundle exec fastlane build_and_upload_prototype_build
+  # bundle exec fastlane build_and_upload_prototype_build build_number:123
+  #####################################################################################
+  desc 'Builds and uploads a prototype build (Enterprise distribution)'
+  lane :build_and_upload_prototype_build do
+    ensure_sentry_installed
+    xcversion # Ensure we're using the right version of Xcode, defined in `.xcode-version` file
+
+    build_for_prototype_build
+
+    appcenter_upload(
+      api_token: get_required_env('APPCENTER_API_TOKEN'),
+      owner_name: 'automattic',
+      owner_type: 'organization',
+      app_name: 'WooCommerce-Installable-Builds',
+      destinations: 'Collaborators',
+      notify_testers: false
+    )
+
+    sentry_upload_dsym(
+      auth_token: get_required_env('SENTRY_AUTH_TOKEN'),
+      org_slug: 'a8c',
+      project_slug: 'woocommerce-ios',
+      dsym_path: './build/WooCommerce.app.dSYM.zip'
+    )
+
+    # The build code used in the Enterprise build has a different format that the App Store one.
+    # We cannot use the standard build_code_current method but have to read it directly.
+    build_code = Xcodeproj::Config.new(File.new(PUBLIC_CONFIG_FILE)).to_hash[BUILD_CODE_KEY]
+    UI.message("Successfully built and uploaded prototype build `#{build_code}` to App Center.")
+
+    return if ENV['BUILDKITE_PULL_REQUEST'].nil?
+
+    # PR Comment
+    comment_body = prototype_build_details_comment(
+      app_display_name: 'WooCommerce iOS',
+      app_center_org_name: 'automattic'
+    )
+    comment_on_pr(
+      project: GITHUB_REPO,
+      pr_number: Integer(ENV.fetch('BUILDKITE_PULL_REQUEST')),
+      reuse_identifier: 'prototype-build-link',
+      body: comment_body
+    )
+  end
+
+  desc 'Builds a prototype build (Enterprise build)'
+  lane :build_for_prototype_build do
+    alpha_code_signing
+
+    # Get the current build version, and update it if needed
+    versions = Xcodeproj::Config.new(File.new(PUBLIC_CONFIG_FILE)).to_hash
+    build_number = generate_prototype_build_number
+    UI.message("Updating build version to #{build_number}")
+    versions[BUILD_CODE_KEY] = build_number
+    new_config = Xcodeproj::Config.new(versions)
+    new_config.save_as(Pathname.new(PUBLIC_CONFIG_FILE))
+
+    gym(
+      scheme: 'WooCommerce Alpha',
+      workspace: WORKSPACE_PATH,
+      export_method: 'enterprise',
+      clean: true,
+      output_directory: 'build',
+      export_team_id: get_required_env('INT_EXPORT_TEAM_ID'),
+      export_options: {
+        **COMMON_EXPORT_OPTIONS,
+        method: 'enterprise',
+        iCloudContainerEnvironment: 'Production'
+      }
+    )
+  end
+
+  #####################################################################################
+  # build_for_testing
+  # -----------------------------------------------------------------------------------
+  # This lane builds the app for testing
+  # -----------------------------------------------------------------------------------
+  # Usage:
+  # bundle exec fastlane build_for_testing
+  #####################################################################################
+  desc 'Build for Testing'
+  lane :build_for_testing do |options|
+    xcversion # Ensure we're using the right version of Xcode, defined in `.xcode-version` file
+
+    run_tests(
+      workspace: WORKSPACE_PATH,
+      scheme: TEST_SCHEME,
+      derived_data_path: 'DerivedData',
+      build_for_testing: true,
+      device: options[:device],
+      deployment_target_version: options[:ios_version]
+    )
+  end
+
+  # Upload the localized metadata (from `fastlane/metadata/`) to App Store Connect
+  #
+  # @option [Boolean] with_screenshots (default: false) If true, will also upload the latest screenshot files to ASC
+  # @option [Boolean] skip_confirm If true, the HTML preview will be bypassed
+  #
+  desc 'Upload the localized metadata to App Store Connect, optionally including screenshots.'
+  lane :update_metadata_on_app_store_connect do |options|
+    # Skip screenshots by default. The naming is "with" to make it clear that
+    # callers need to opt-in to adding screenshots. The naming of the deliver
+    # (upload_to_app_store) parameter, on the other hand, uses the skip verb.
+    with_screenshots = options.fetch(:with_screenshots, false)
+    skip_screenshots = !with_screenshots
+
+    upload_to_app_store(
+      app_identifier: APP_STORE_VERSION_BUNDLE_IDENTIFIER,
+      app_version: release_version_current,
+      team_id: '299112',
+      skip_binary_upload: true,
+      screenshots_path: File.join(FASTLANE_DIR, 'promo_screenshots'),
+      skip_screenshots: skip_screenshots,
+      overwrite_screenshots: true, # won't have effect if `skip_screenshots` is true
+      phased_release: true,
+      precheck_include_in_app_purchases: false,
+      api_key_path: ASC_KEY_PATH,
+      force: options[:skip_confirm]
+    )
+  end
+
+  ########################################################################
+  # Screenshot Lanes
+  ########################################################################
+  desc 'Build Screenshots'
+  lane :build_screenshots do
+    # Ensure we're using the latest Pods
+    cocoapods(verbose: true)
+
+    # Ensure we're using the right version of Xcode, defined in `.xcode-version` file
+    xcversion
+
+    scan(
+      workspace: WORKSPACE_PATH,
+      scheme: SCREENSHOTS_SCHEME,
+      build_for_testing: true,
+      derived_data_path: DERIVED_DATA_DIR
+    )
+  end
+
+  desc 'Take Screenshots'
+  lane :take_screenshots do |options|
+    # Ensure we're using the right version of Xcode, defined in `.xcode-version` file
+    xcversion
+
+    # By default, clear previous screenshots
+    languages = IOS_LOCALES
+
+    languages &= options[:languages].split(',') unless options[:languages].nil?
+
+    devices = SCREENSHOT_DEVICES
+
+    devices &= options[:devices].split(',') unless options[:devices].nil?
+
+    UI.user_error!("Unable to run on devices: \"#{devices}\"") if devices.empty?
+
+    puts "Creating screenshots for #{languages} on #{devices}"
+
+    # Erase the simulator between runs in order to get everything back to a default state
+    rebuild_screenshot_devices
+
+    capture_ios_screenshots(
+      scheme: SCREENSHOTS_SCHEME,
+
+      localize_simulator: true,
+      languages: languages,
+
+      devices: devices,
+
+      # Don't rebuild the app for every new locale / device type, and specify where to find the binaries
+      test_without_building: true,
+      derived_data_path: DERIVED_DATA_DIR,
+
+      # Where should the screenshots go, and should we delete them before starting?
+      output_directory: SCREENSHOTS_DIR,
+
+      # Output the simulator logs for debugging
+      buildlog_path: File.join(FASTLANE_DIR, 'logs'),
+      output_simulator_logs: true,
+      result_bundle: true,
+      namespace_log_files: true,
+
+      concurrent_simulators: true,
+
+      # Explicitly set the iOS version to ensure we match the created simulators
+      ios_version: SIMULATOR_VERSION,
+
+      # Erase the simulator prior to booting the app
+      erase_simulator: true,
+
+      # Retry a few times if something is a little flaky
+      number_of_retries: 3,
+
+      # But fail completely after those 3 retries
+      stop_after_first_error: true,
+
+      # Allow the caller to invoke dark mode
+      dark_mode: options[:mode].to_s.downcase == 'dark',
+
+      # Make the status bar pretty
+      override_status_bar: true
+    )
+  end
+
+  desc 'Create Screenshots Locally'
+  lane :screenshots do |options|
+    FileUtils.rm_f(SCREENSHOTS_DIR)
+
+    build_screenshots(options)
+    take_screenshots(options.merge({ mode: 'light' }))
+    take_screenshots(options.merge({ mode: 'dark' }))
+  end
+
+  desc 'Rebuild Screenshot Devices'
+  lane :rebuild_screenshot_devices do
+    require 'simctl'
+
+    SimCtl.list_devices.each do |device|
+      next unless SCREENSHOT_DEVICES.include? device.name
+
+      puts "Deleting #{device.name} because it already exists."
+      device.delete
+    end
+
+    SCREENSHOT_DEVICES.each do |device|
+      runtime = SimCtl.runtime(name: "iOS #{SIMULATOR_VERSION}")
+      devicetype = SimCtl.devicetype(name: device)
+
+      SimCtl.create_device(device, devicetype, runtime)
+    end
+  end
+
+  desc 'Create Screenshot Summary'
+  lane :create_screenshot_summary do
+    fastlane_require 'snapshot'
+
+    # Provide enough information to bootstrap the configuration and generate the HTML report
+    Snapshot.config = FastlaneCore::Configuration.create(
+      Snapshot::Options.available_options,
+      {
+        workspace: WORKSPACE_PATH,
+        scheme: SCREENSHOTS_SCHEME
+      }
+    )
+
+    Snapshot::ReportsGenerator.new.generate
+  end
+
+  desc 'Downloads localized strings and App Store Connect metadata from GlotPress'
+  lane :download_localized_strings_and_metadata_from_glotpress do
+    download_localized_strings_from_glotpress
+    download_localized_metadata_from_glotpress
+  end
+
+  desc 'Downloads localized `.strings` from GlotPress'
+  lane :download_localized_strings_from_glotpress do
+    ios_download_strings_files_from_glotpress(
+      project_url: GLOTPRESS_APP_STRINGS_PROJECT_URL,
+      locales: GLOTPRESS_TO_LPROJ_APP_LOCALE_CODES,
+      download_dir: RESOURCES_FOLDER
+    )
+    git_commit(
+      path: File.join(RESOURCES_FOLDER, '*.lproj', 'Localizable.strings'),
+      message: 'Update app translations – `Localizable.strings`',
+      allow_nothing_to_commit: true
+    )
+
+    # Redispatch the appropriate subset of translations back to the manually-maintained `.strings`
+    # files that we merged at the `complete_code_freeze` time via `ios_merge_strings_files`
+    modified_files = ios_extract_keys_from_strings_files(
+      source_parent_dir: RESOURCES_FOLDER,
+      target_original_files: MANUALLY_MAINTAINED_STRINGS_FILES
+    )
+    git_commit(
+      path: modified_files,
+      message: 'Update app translations – Other `.strings`',
+      allow_nothing_to_commit: true
+    )
+  end
+
+  desc 'Downloads localized metadata for App Store Connect from GlotPress'
+  lane :download_localized_metadata_from_glotpress do
+    metadata_directory = FASTLANE_METADATA_FOLDER
+
+    # FIXME: We should make the `fastlane/metadata/default/release_notes.txt` path be the source of truth for the original copies in the future.
+    # (will require changes in the `update_app_store_strings` lane, the Release Scenario, the MC tool to generate the announcement post…)
+    #
+    # In the meantime, just copy the file to the right place for `deliver` to find, i.e. to the `default` pseudo-locale which is used as fallback
+    FileUtils.cp(RELEASE_NOTES_PATH, File.join(metadata_directory, 'default', 'release_notes.txt'))
+
+    # FIXME: Replace this with a call to the future replacement of `gp_downloadmetadata` once it's implemented in the release-toolkit (see paaHJt-31O-p2).
+    locales_map = GLOTPRESS_TO_ASC_METADATA_LOCALE_CODES
+    target_files = {
+      "v#{release_version_current}-whats-new": { desc: 'release_notes.txt', max_size: 4000 },
+      app_store_name: { desc: 'name.txt', max_size: 30 },
+      app_store_subtitle: { desc: 'subtitle.txt', max_size: 30 },
+      app_store_desc: { desc: 'description.txt', max_size: 4000 },
+      app_store_keywords: { desc: 'keywords.txt', max_size: 100 }
+    }
+
+    gp_downloadmetadata(
+      project_url: GLOTPRESS_APP_STORE_METADATA_PROJECT_URL,
+      target_files: target_files,
+      locales: locales_map,
+      download_path: metadata_directory
+    )
+    files_to_commit = [File.join(metadata_directory, '**', '*.txt')]
+
+    # Ensure that none of the `.txt` files in `en-US` would accidentally override our originals in `default`
+    target_files.values.map { |h| h[:desc] }.each do |file|
+      en_file_path = File.join(metadata_directory, 'en-US', file)
+      if File.exist?(en_file_path)
+        UI.user_error!("File `#{en_file_path}` would override the same one in `#{metadata_directory}/default`, but `default/` is the source of truth. " \
+                       + "Delete the `#{en_file_path}` file, ensure the `default/` one has the expected original copy, and try again.")
+      end
+    end
+
+    # Ensure even empty locale folders have an empty `.gitkeep` file (in case we don't have any translation at all ready for some locales)
+    locales_map.each_value do |locale|
+      gitkeep = File.join(metadata_directory, locale, '.gitkeep')
+      next if File.exist?(gitkeep)
+
+      FileUtils.mkdir_p(File.dirname(gitkeep))
+      FileUtils.touch(gitkeep)
+      files_to_commit.append(gitkeep)
+    end
+
+    # Commit
+    git_add(
+      path: files_to_commit,
+      shell_escape: false
+    )
+    git_commit(
+      path: files_to_commit,
+      message: 'Update metadata translations',
+      allow_nothing_to_commit: true
+    )
+  end
+
+  desc 'Download App Store Translations'
+  lane :download_app_store_translations do
+    # FIXME: `download_localized_metadata_from_glotpress` makes this lane almost redundant,
+    # but we need to carefully adjust the screenshots metadata locations to complete the process.
+    # See https://github.com/woocommerce/woocommerce-ios/issues/6987
+    files = {
+
+      # Metadata fields
+      'app_store_desc' => { desc: 'description.txt' },
+      'app_store_keywords' => { desc: 'keywords.txt' },
+      'app_store_subtitle' => { desc: 'subtitle.txt' },
+      'app_store_promo_text' => { desc: 'promotional_text.txt' },
+      "v#{release_version_current}-whats-new" => { desc: 'whats_new.txt' },
+
+      # Screenshots
+      'app_store_screenshot-1' => { desc: 'app_store_screenshot_1.txt' },
+      'app_store_screenshot-2' => { desc: 'app_store_screenshot_2.txt' },
+      'app_store_screenshot-3' => { desc: 'app_store_screenshot_3.txt' },
+      'app_store_screenshot-4' => { desc: 'app_store_screenshot_4.txt' },
+      'app_store_screenshot-5' => { desc: 'app_store_screenshot_5.txt' }
+    }
+
+    metadata_locales = GLOTPRESS_TO_ASC_METADATA_LOCALE_CODES
+
+    gp_downloadmetadata(
+      project_url: GLOTPRESS_APP_STORE_METADATA_PROJECT_URL,
+      target_files: files,
+      locales: metadata_locales,
+      source_locale: 'en-US',
+      download_path: FASTLANE_METADATA_FOLDER
+    )
+
+    # Copy appstoreres (screenshot-related) txt files into `en-US`
+    en_us_path = File.join(Dir.pwd, 'metadata', 'en-US')
+    FileUtils.mkdir_p(en_us_path)
+
+    [
+      'promo_screenshot_1.txt',
+      'promo_screenshot_2.txt',
+      'promo_screenshot_3.txt',
+      'promo_screenshot_4.txt',
+      'promo_screenshot_5.txt'
+    ].each do |filename|
+      source = File.join(Dir.pwd, 'appstoreres', 'metadata', 'source', filename)
+      destination = File.join(en_us_path, filename)
+      FileUtils.cp(source, destination)
+    end
+
+    # Never store review information (it contains passwords and PII)
+    review_info_path = File.join(Dir.pwd, 'metadata', 'review_information')
+    FileUtils.remove_dir(review_info_path) if File.directory?(review_info_path)
+  end
+
+  desc 'Create Promo Screenshots'
+  lane :create_promo_screenshots do |options|
+    unless Fastlane::Helper::GitHelper.has_git_lfs?
+      UI.user_error!('LFS not enabled – unable to generate promo screenshots. Run `git lfs install && git lfs fetch && git lfs pull` to fix this.')
+    end
+
+    # Create a copy of the files to work with – this ensures that if we're doing multiple
+    # screenshot generation tasks close together, we can keep reusing the same source files
+    original_screenshot_directory = File.join(Dir.pwd, 'screenshots')
+    metadata_directory = File.join(Dir.pwd, 'metadata')
+    output_directory = File.join(Dir.pwd, '/promo_screenshots')
+
+    # Run screenshots generator tool
+    promo_screenshots(
+      orig_folder: original_screenshot_directory,
+      metadata_folder: metadata_directory,
+      output_folder: output_directory,
+      force: options[:force]
+    )
+  end
+
+  ########################################################################
+  # Configure Lanes
+  ########################################################################
+
+  # Downloads all the required certificates and profiles for both production and internal distribution builds.
+  # Optionally, it can create any new necessary certificate or profile.
+  #
+  # @option [Boolean] readonly (default: true) Whether to only fetch existing certificates and profiles, without generating new ones.
+  lane :update_certs_and_profiles do |options|
+    alpha_code_signing(options)
+    appstore_code_signing(options)
+  end
+
+  # Downloads all the required certificates and profiles the enterprise build.
+  # Optionally, it can create any new necessary certificate or profile.
+  #
+  # @option [Boolean] readonly (default: true) Whether to only fetch existing certificates and profiles, without generating new ones.
+  private_lane :alpha_code_signing do |options|
+    readonly = options.fetch(:readonly, true)
+
+    if readonly
+      # In readonly mode, we can use the API key
+      api_key_path = ASC_KEY_PATH
+    else
+      # The Enterprise account APIs do not support authentication via API key.
+      # If we want to modify data (readonly = false) we need to authenticate manually.
+      prompt_user_for_app_store_connect_credentials
+      # We also need to pass no API key path, otherwise Fastlane will give
+      # precedence to that authentication mode.
+      api_key_path = nil
+    end
+
+    match(
+      type: 'enterprise',
+      team_id: get_required_env('INT_EXPORT_TEAM_ID'),
+      app_identifier: ALPHA_BUNDLE_IDENTIFIERS,
+      readonly: readonly,
+      api_key_path: api_key_path
+    )
+  end
+
+  # Downloads all the required certificates and profiles the production build.
+  # Optionally, it can create any new necessary certificate or profile.
+  #
+  # @option [Boolean] readonly (default: true) Whether to only fetch existing certificates and profiles, without generating new ones.
+  private_lane :appstore_code_signing do |options|
+    match(
+      type: 'appstore',
+      team_id: get_required_env('EXT_EXPORT_TEAM_ID'),
+      app_identifier: MAIN_BUNDLE_IDENTIFIERS,
+      readonly: options.fetch(:readonly, true),
+      api_key_path: ASC_KEY_PATH
+    )
+  end
+
+  ########################################################################
+  # Helper Lanes
+  ########################################################################
+  desc 'Run release preflight checks'
+  lane :release_preflight do
+    configure_validate
+  end
+
+  # Generates the `.strings` file to be imported by GlotPress, by parsing source code (using `genstrings` under the hood).
+  #
+  #
+  # @option [Boolean] skip_commit (default: false) If true, does not commit the changes made to the `.strings` file.
+  #
+  # @called_by complete_code_freeze
+  #
+  desc 'Updates the main `Localizable.strings` file — that will be imported by GlotPress — from code and `Info.plist` files'
+  lane :generate_strings_file_for_glotpress do |options|
+    cocoapods
+
+    en_lproj_path = File.join(RESOURCES_FOLDER, 'en.lproj')
+    ios_generate_strings_file_from_code(
+      paths: [
+        'WooCommerce/',
+        'Pods/WordPress*/',
+        'Storage/Storage/',
+        'Networking/Networking/',
+        'Hardware/Hardware/'
+      ],
+      exclude: [
+        '*Vendor*',
+        '**/AppLocalizedString.swift',
+        'WooCommerce/WooCommerceTests/**' # Some unit tests include localized strings, but we don't want to crowd GlotPress with them
+      ],
+      routines: ['AppLocalizedString'],
+      output_dir: en_lproj_path
+    )
+
+    # Merge various manually-maintained `.strings` files into the previously generated `Localizable.strings` so their extra keys are also imported in GlotPress.
+    #
+    # Note: We will re-extract the translations back during `download_localized_strings_from_glotpress` (via a call to `ios_extract_keys_from_strings_files`)
+    ios_merge_strings_files(
+      paths_to_merge: MANUALLY_MAINTAINED_STRINGS_FILES,
+      destination: File.join(en_lproj_path, 'Localizable.strings')
+    )
+
+    next if options.fetch(:skip_commit, false)
+
+    git_commit(
+      path: en_lproj_path,
+      message: 'Freeze strings for localization',
+      allow_nothing_to_commit: true
+    )
+  end
+
+  desc 'Lint the `.strings` files'
+  lane :lint_localizations do
+    ios_lint_localizations(input_dir: RESOURCES_FOLDER, allow_retry: true)
+  end
+
+  def write_file(path, contents)
+    FileUtils.rm_f(path)
+    file = File.new(path, 'w')
+    file.write(contents)
+  rescue IOError => e
+    UI.crash(e)
+  ensure
+    file&.close
+  end
+end
+
+########################################################################
+# Test Lanes
+########################################################################
+#####################################################################################
+# test_without_building
+# -----------------------------------------------------------------------------------
+# This lane runs tests without building the app.
+# It requires a prebuilt xctestrun file and simulator destination where the tests will be run.
+# -----------------------------------------------------------------------------------
+# Usage:
+# bundle exec fastlane test_without_building [name:<Partial name of the .xctestrun file>]
+#
+# Example:
+# bundle exec fastlane test_without_building name:UITests
+#####################################################################################
+desc 'Run tests without building'
+lane :test_without_building do |options|
+  # Find the referenced .xctestrun file based on its name
+  build_products_path = File.expand_path('DerivedData/Build/Products/', File.dirname(Dir.pwd))
+
+  xctestrun_path = Dir.glob(File.join(build_products_path, '*.xctestrun')).select do |e|
+    e.include?(options[:name])
+  end.first
+
+  UI.user_error!("Unable to find .xctestrun file at #{xctestrun_path}") unless !xctestrun_path.nil? && File.exist?(xctestrun_path)
+
+  inject_buildkite_analytics_environment(xctestrun_path: xctestrun_path) if buildkite_ci?
+
+  # Only run UI tests in parallel.
+  # At the time of writing with Xcode 14.3, we need to explicitly set this value despite using test plans that configure parallelism.
+  parallel_testing_value = options[:name] == 'UITests'
+
+  run_tests(
+    workspace: WORKSPACE_PATH,
+    scheme: TEST_SCHEME,
+    device: options[:device],
+    reset_simulator: true,
+    parallel_testing: parallel_testing_value,
+    concurrent_workers: CONCURRENT_SIMULATORS,
+    max_concurrent_simulators: CONCURRENT_SIMULATORS,
+    test_without_building: true,
+    xctestrun: xctestrun_path,
+    result_bundle: true,
+    # settings for XML test report generation via `trainer`
+    output_types: '',
+    fail_build: false
+  )
+
+  trainer(
+    path: lane_context[SharedValues::SCAN_GENERATED_XCRESULT_PATH],
+    fail_build: true
+  )
+end
+
+# -----------------------------------------------------------------------------------
+# Generates Prototype Build Version Numbers in a Buildkite-specific way
+# -----------------------------------------------------------------------------------
+def generate_prototype_build_number
+  if ENV.key?('BUILDKITE')
+    commit = ENV.fetch('BUILDKITE_COMMIT')[0, 7]
+    branch = ENV.fetch('BUILDKITE_BRANCH')
+    pr_num = ENV.fetch('BUILDKITE_PULL_REQUEST')
+
+    pr_num == 'false' ? "#{branch}-#{commit}" : "pr#{pr_num}-#{commit}"
+  else
+    repo = Git.open(PROJECT_ROOT_FOLDER)
+    commit = repo.current_branch
+    branch = repo.revparse('HEAD')[0, 7]
+
+    "#{branch}-#{commit}"
+  end
+end
+
+# -----------------------------------------------------------------------------------
+# Raises an error if Sentry is not installed
+# -----------------------------------------------------------------------------------
+def ensure_sentry_installed
+  # This is an action provided by the Sentry Fastlane plugin that verifies the
+  # CLI is installed and its version is compatible with the plugin's
+  # expectation.
+  sentry_check_cli_installed
+end
+
+# -----------------------------------------------------------------------------------
+# Kicks off a Buildkite build
+# -----------------------------------------------------------------------------------
+def trigger_buildkite_release_build(branch:, beta:)
+  build_url = buildkite_trigger_build(
+    buildkite_organization: 'automattic',
+    buildkite_pipeline: 'woocommerce-ios',
+    branch: branch,
+    environment: { BUILDKITE_BETA_RELEASE: beta },
+    pipeline_file: 'release-builds.yml'
+  )
+
+  message = "This build triggered a build on <code>#{branch}</code>:<br>- #{build_url}"
+  buildkite_annotate(style: 'info', context: 'trigger-release-build', message: message) if is_ci
+end
+
+def inject_buildkite_analytics_environment(xctestrun_path:)
+  require 'plist'
+
+  xctestrun = Plist.parse_xml(xctestrun_path)
+  xctestrun['TestConfigurations'].each do |configuration|
+    configuration['TestTargets'].each do |target|
+      TEST_ANALYTICS_ENVIRONMENT.each do |key|
+        value = ENV.fetch(key)
+        next if value.nil?
+
+        target['EnvironmentVariables'][key] = value
+      end
+    end
+  end
+
+  File.write(xctestrun_path, Plist::Emit.dump(xctestrun))
+end
+
+# -----------------------------------------------------------------------------------
+# Version Methods
+# -----------------------------------------------------------------------------------
+
+# Returns the release version of the app in the format `1.2` or `1.2.3` if it is a hotfix
+#
+def release_version_current
+  # Read the current release version from the .xcconfig file and parse it into an AppVersion object
+  current_version = VERSION_FORMATTER.parse(VERSION_FILE.read_release_version)
+  # Return the formatted release version
+  VERSION_FORMATTER.release_version(current_version)
+end
+
+#  Returns the next release version of the app in the format `1.2` or `1.2.3` if it is a hotfix
+#
+def release_version_next
+  # Read the current release version from the .xcconfig file and parse it into an AppVersion object
+  current_version = VERSION_FORMATTER.parse(VERSION_FILE.read_release_version)
+  # Calculate the next release version
+  next_calculated_release_version = VERSION_CALCULATOR.next_release_version(version: current_version)
+  # Return the formatted release version
+  VERSION_FORMATTER.release_version(next_calculated_release_version)
+end
+
+# Returns the current build code of the app
+#
+def build_code_current
+  # Read the current build code from the .xcconfig file and parse it into an AppVersion object
+  # The AppVersion is used because WCiOS uses the four part (1.2.3.4) build code format, so the version
+  # calculator can be used to calculate the next four-part version
+  version = VERSION_FORMATTER.parse(VERSION_FILE.read_build_code(attribute_name: BUILD_CODE_KEY))
+  # Return the formatted build code
+  BUILD_CODE_FORMATTER.build_code(version: version)
+end
+
+# Returns the build code of the app for the code freeze. It is the release version name plus sets the build number to 0
+#
+def build_code_code_freeze
+  # Read the current build code from the .xcconfig file and parse it into an AppVersion object
+  # The AppVersion is used because WCiOS uses the four part (1.2.3.4) build code format, so the version
+  # calculator can be used to calculate the next four-part version
+  release_version_current = VERSION_FORMATTER.parse(VERSION_FILE.read_release_version)
+  # Calculate the next release version, which will be used as the basis of the new build code
+  build_code_code_freeze = VERSION_CALCULATOR.next_release_version(version: release_version_current)
+  # Return the formatted build code
+  BUILD_CODE_FORMATTER.build_code(version: build_code_code_freeze)
+end
+
+# Returns the next build code of the app
+#
+def build_code_next
+  # Read the current build code from the .xcconfig file and parse it into an AppVersion object
+  # The AppVersion is used because WCiOS uses the four part (1.2.3.4) build code format, so the version
+  # calculator can be used to calculate the next four-part version
+  build_code_current = VERSION_FORMATTER.parse(VERSION_FILE.read_build_code(attribute_name: BUILD_CODE_KEY))
+  # Calculate the next build code
+  build_code_next = VERSION_CALCULATOR.next_build_number(version: build_code_current)
+  # Return the formatted build code
+  BUILD_CODE_FORMATTER.build_code(version: build_code_next)
+end
+
+def release_is_hotfix?
+  # Read the current release version from the .xcconfig file and parse it into an AppVersion object
+  current_version = VERSION_FORMATTER.parse(VERSION_FILE.read_release_version)
+  # Calculate and return whether the release version is a hotfix
+  VERSION_CALCULATOR.release_is_hotfix?(version: current_version)
+end
+
+def commit_version_bump
+  git_commit(
+    path: PUBLIC_CONFIG_FILE,
+    message: 'Bump version number',
+    allow_nothing_to_commit: false
+  )
+end
+
+def buildkite_ci?
+  ENV.fetch('BUILDKITE', false)
+end
+
+def prompt_user_for_app_store_connect_credentials
+  require 'credentials_manager'
+
+  # If Fastlane cannot instantiate a user, it will ask the caller for the email.
+  # Once we have it, we can set it as `FASTLANE_USER` in the environment (which has lifecycle limited to this call) so that the next commands will
+  # already have access to it.
+  # Note that if the user is already available to `AccountManager`, setting it in the environment is redundant, but Fastlane doesn't provide a way
+  # to check it so we have to do it anyway.
+  ENV['FASTLANE_USER'] = CredentialsManager::AccountManager.new.user
+end
+
+def override_default_release_branch(version)
+  success = Fastlane::Helper::GitHelper.checkout_and_pull(release: version)
+  UI.user_error!("Release branch for version #{version} doesn't exist. Abort.") unless success
+
+  UI.message("Checked out branch `#{git_branch}` as requested by user.\n")
+end
+
+# https://buildkite.com/docs/test-analytics/ci-environments
+TEST_ANALYTICS_ENVIRONMENT = %w[
+  BUILDKITE_ANALYTICS_TOKEN
+  BUILDKITE_BUILD_ID
+  BUILDKITE_BUILD_NUMBER
+  BUILDKITE_JOB_ID
+  BUILDKITE_BRANCH
+  BUILDKITE_COMMIT
+  BUILDKITE_MESSAGE
+  BUILDKITE_BUILD_URL
+].freeze
+
+# -----------------------------------------------------------------------------------
+# Release Management Utils
+# -----------------------------------------------------------------------------------
+def create_backmerge_pr
+  version = release_version_current
+
+  create_release_backmerge_pull_request(
+    repository: GITHUB_REPO,
+    source_branch: "release/#{version}",
+    labels: ['Releases'],
+    milestone_title: release_version_next
+  )
+rescue StandardError => e
+  error_message = <<-MESSAGE
+    Error creating backmerge pull request: #{e.message}
+    If this is not the first time you are running the release task, the backmerge PR for the version `#{version}` might have already been previously created.
+    Please close any previous backmerge PR for `#{version}`, delete the previous merge branch, then run the release task again.
+  MESSAGE
+
+  buildkite_annotate(style: 'error', context: 'error-creating-backmerge', message: error_message) if is_ci
+
+  UI.user_error!(error_message)
+end
+
+def ensure_git_branch_is_release_branch!
+  # Verify that the current branch is a release branch. Notice that `ensure_git_branch` expects a RegEx parameter
+  ensure_git_branch(branch: '^release/')
+end
+
+def ensure_branch_does_not_exist!(branch_name)
+  return unless Fastlane::Helper::GitHelper.branch_exists_on_remote?(branch_name: branch_name)
+
+  error_message = "The branch `#{branch_name}` already exists. Please check first if there is an existing Pull Request that needs to be merged or closed first, " \
+                  'or delete the branch to then run again the release task.'
+
+  buildkite_annotate(style: 'error', context: 'error-checking-branch', message: error_message) if is_ci
+
+  UI.user_error!(error_message)
+end
+
+def report_milestone_error(error_title:)
+  error_message = <<-MESSAGE
+    #{error_title}
+    - If this is not the first time you are running the release task (e.g. retrying because it failed on first attempt), the milestone might have already been closed and this error is expected.
+    - Otherwise if this is the first you are running the release task for this version, please investigate the error.
+  MESSAGE
+
+  UI.error(error_message)
+
+  buildkite_annotate(style: 'warning', context: 'error-with-milestone', message: error_message) if is_ci
+end
+
+def check_pods_references
+  result = ios_check_beta_deps(lockfile: File.join(PROJECT_ROOT_FOLDER, 'Podfile.lock'))
+
+  style = result[:pods].nil? || result[:pods].empty? ? 'success' : 'warning'
+  message = "### Checking Internal Dependencies are all on a **stable** version\n\n#{result[:message]}"
+  buildkite_annotate(context: 'pods-check', style: style, message: message) if is_ci
+end

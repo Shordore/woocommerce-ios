@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.XIB" version="3.0" toolsVersion="20037" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES">
+    <device id="retina4_7" orientation="portrait" appearance="light"/>
+    <dependencies>
+        <deployment identifier="iOS"/>
+        <plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="20020"/>
+        <capability name="documents saved in the Xcode 8 format" minToolsVersion="8.0"/>
+    </dependencies>
+    <objects>
+        <placeholder placeholderIdentifier="IBFilesOwner" id="-1" userLabel="File's Owner"/>
+        <placeholder placeholderIdentifier="IBFirstResponder" id="-2" customClass="UIResponder"/>
+        <tableViewCell clipsSubviews="YES" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" layoutMarginsFollowReadableWidth="YES" selectionStyle="default" indentationWidth="10" rowHeight="72" id="8he-cT-5iI" customClass="StoreTableViewCell" customModule="WooCommerce" customModuleProvider="target">
+            <rect key="frame" x="0.0" y="0.0" width="375" height="72"/>
+            <autoresizingMask key="autoresizingMask"/>
+            <tableViewCellContentView key="contentView" opaque="NO" clipsSubviews="YES" multipleTouchEnabled="YES" contentMode="center" insetsLayoutMarginsFromSafeArea="NO" tableViewCell="8he-cT-5iI" id="KTm-Fu-oXz">
+                <rect key="frame" x="0.0" y="0.0" width="375" height="72"/>
+                <autoresizingMask key="autoresizingMask"/>
+                <subviews>
+                    <stackView opaque="NO" contentMode="scaleToFill" preservesSuperviewLayoutMargins="YES" layoutMarginsFollowReadableWidth="YES" translatesAutoresizingMaskIntoConstraints="NO" id="LL0-HO-TaM">
+                        <rect key="frame" x="16" y="0.0" width="359" height="72"/>
+                        <subviews>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="bER-Qc-gQZ" userLabel="Checkmark  ContainerView">
+                                <rect key="frame" x="0.0" y="0.0" width="35" height="72"/>
+                                <subviews>
+                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="eHN-Ud-mEG" userLabel="Checkmark ImageView">
+                                        <rect key="frame" x="0.0" y="24" width="24" height="24"/>
+                                        <constraints>
+                                            <constraint firstAttribute="width" constant="24" id="4Sv-qE-YJO"/>
+                                            <constraint firstAttribute="height" constant="24" id="QEn-V8-PZY"/>
+                                        </constraints>
+                                    </imageView>
+                                </subviews>
+                                <constraints>
+                                    <constraint firstAttribute="height" relation="greaterThanOrEqual" priority="750" constant="55" id="9nR-cr-S0v"/>
+                                    <constraint firstItem="eHN-Ud-mEG" firstAttribute="leading" secondItem="bER-Qc-gQZ" secondAttribute="leading" id="Afm-1V-Cx3"/>
+                                    <constraint firstItem="eHN-Ud-mEG" firstAttribute="centerY" secondItem="bER-Qc-gQZ" secondAttribute="centerY" id="Lul-cm-a9g"/>
+                                    <constraint firstAttribute="width" constant="35" id="e12-mq-s5b"/>
+                                </constraints>
+                            </view>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="oWJ-s5-osb" userLabel="Checkmark  ContainerView">
+                                <rect key="frame" x="35" y="0.0" width="35" height="72"/>
+                                <subviews>
+                                    <imageView userInteractionEnabled="NO" contentMode="scaleToFill" horizontalHuggingPriority="251" verticalHuggingPriority="251" translatesAutoresizingMaskIntoConstraints="NO" id="QSk-eJ-nTE" userLabel="Checkmark ImageView">
+                                        <rect key="frame" x="0.0" y="24" width="24" height="24"/>
+                                        <constraints>
+                                            <constraint firstAttribute="height" constant="24" id="aO3-Fc-NUu"/>
+                                            <constraint firstAttribute="width" constant="24" id="lha-by-kO4"/>
+                                        </constraints>
+                                    </imageView>
+                                </subviews>
+                                <constraints>
+                                    <constraint firstItem="QSk-eJ-nTE" firstAttribute="centerY" secondItem="oWJ-s5-osb" secondAttribute="centerY" id="2Ze-Bw-TEN"/>
+                                    <constraint firstAttribute="width" constant="35" id="BjA-nh-XRW"/>
+                                    <constraint firstItem="QSk-eJ-nTE" firstAttribute="leading" secondItem="oWJ-s5-osb" secondAttribute="leading" id="cfU-6N-v11"/>
+                                    <constraint firstAttribute="height" relation="greaterThanOrEqual" priority="750" constant="55" id="g3e-7W-XWc"/>
+                                </constraints>
+                            </view>
+                            <view contentMode="scaleToFill" translatesAutoresizingMaskIntoConstraints="NO" id="rmH-TD-Oll" userLabel="TextContainerView">
+                                <rect key="frame" x="70" y="0.0" width="289" height="72"/>
+                                <subviews>
+                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" verticalHuggingPriority="750" text="Name" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="ejj-Pj-vZz">
+                                        <rect key="frame" x="0.0" y="10" width="289" height="17"/>
+                                        <fontDescription key="fontDescription" style="UICTFontTextStyleBody"/>
+                                        <nil key="textColor"/>
+                                        <nil key="highlightedColor"/>
+                                    </label>
+                                    <label opaque="NO" userInteractionEnabled="NO" contentMode="left" text="URL" textAlignment="natural" lineBreakMode="tailTruncation" baselineAdjustment="alignBaselines" adjustsFontSizeToFit="NO" translatesAutoresizingMaskIntoConstraints="NO" id="CjK-ri-inj">
+                                        <rect key="frame" x="0.0" y="27" width="289" height="35"/>
+                                        <fontDescription key="fontDescription" style="UICTFontTextStyleFootnote"/>
+                                        <nil key="textColor"/>
+                                        <nil key="highlightedColor"/>
+                                    </label>
+                                </subviews>
+                                <constraints>
+                                    <constraint firstAttribute="bottom" secondItem="CjK-ri-inj" secondAttribute="bottom" constant="10" id="Lm9-hT-2q8"/>
+                                    <constraint firstAttribute="trailing" secondItem="ejj-Pj-vZz" secondAttribute="trailing" id="TbP-lu-lfk"/>
+                                    <constraint firstItem="CjK-ri-inj" firstAttribute="top" secondItem="ejj-Pj-vZz" secondAttribute="bottom" id="TlB-rO-jhZ"/>
+                                    <constraint firstItem="ejj-Pj-vZz" firstAttribute="top" secondItem="rmH-TD-Oll" secondAttribute="top" constant="10" id="Wis-Fp-VuN"/>
+                                    <constraint firstItem="ejj-Pj-vZz" firstAttribute="leading" secondItem="rmH-TD-Oll" secondAttribute="leading" id="cPs-D8-OhR"/>
+                                    <constraint firstAttribute="trailing" secondItem="CjK-ri-inj" secondAttribute="trailing" id="g9N-8j-ngN"/>
+                                    <constraint firstItem="CjK-ri-inj" firstAttribute="leading" secondItem="rmH-TD-Oll" secondAttribute="leading" id="xAD-Oc-lC1"/>
+                                </constraints>
+                            </view>
+                        </subviews>
+                    </stackView>
+                </subviews>
+                <constraints>
+                    <constraint firstAttribute="trailing" secondItem="LL0-HO-TaM" secondAttribute="trailing" id="Fl6-Pm-ezo"/>
+                    <constraint firstAttribute="bottom" secondItem="LL0-HO-TaM" secondAttribute="bottom" id="OJl-YH-nB5"/>
+                    <constraint firstItem="LL0-HO-TaM" firstAttribute="leading" secondItem="KTm-Fu-oXz" secondAttribute="leadingMargin" id="SkO-g2-IqH"/>
+                    <constraint firstItem="LL0-HO-TaM" firstAttribute="top" secondItem="KTm-Fu-oXz" secondAttribute="top" id="cZt-2l-Lbk"/>
+                </constraints>
+            </tableViewCellContentView>
+            <connections>
+                <outlet property="checkmarkContainerView" destination="bER-Qc-gQZ" id="cqd-em-0OH"/>
+                <outlet property="checkmarkImageView" destination="eHN-Ud-mEG" id="7bk-gd-EGI"/>
+                <outlet property="nameLabel" destination="ejj-Pj-vZz" id="x64-S0-SqW"/>
+                <outlet property="noticeContainerView" destination="oWJ-s5-osb" id="4rt-2g-oq2"/>
+                <outlet property="noticeImageView" destination="QSk-eJ-nTE" id="BjB-l6-hPn"/>
+                <outlet property="urlLabel" destination="CjK-ri-inj" id="yxp-cr-eOp"/>
+            </connections>
+            <point key="canvasLocation" x="-153.5" y="-188"/>
+        </tableViewCell>
+    </objects>
+</document>

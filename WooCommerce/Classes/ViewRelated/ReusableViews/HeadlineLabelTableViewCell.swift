@@ -1,0 +1,97 @@
+import UIKit
+
+
+/// Represents a cell with a Title Label and Body Label
+///
+final class HeadlineLabelTableViewCell: UITableViewCell {
+    @IBOutlet private weak var headlineLabel: UILabel?
+    @IBOutlet private weak var bodyLabel: UILabel?
+    /// The spacing between the `headlineLabel` and the `bodyLabel`.
+    @IBOutlet private var headlineToBodyConstraint: NSLayoutConstraint!
+
+    enum Style {
+        /// Bold title with no margin against the body. Hard colors. This is the default.
+        case compact
+        /// Normal body title with a margin against the body. The title uses body style while
+        /// the body uses subheadline style.
+        case subheadline
+        /// Normal body title with a margin against the body. The title uses body style while
+        /// the body uses secondary style.
+        case regular
+        /// Title with body style and body with secondary style.
+        /// No margin between the labels. Body has specified line limit count.
+        case bodyWithLineLimit(count: Int)
+
+        fileprivate static let `default` = Self.compact
+    }
+
+    override func awakeFromNib() {
+        super.awakeFromNib()
+
+        configureBackground()
+        configureHeadline()
+        configureBody()
+        apply(style: .default)
+    }
+
+    /// Update the UI style and label values.
+    func update(style: Style = .default, headline: String?, body: String?) {
+        headlineLabel?.text = headline
+        bodyLabel?.text = body
+        apply(style: style)
+    }
+
+    override func updateConfiguration(using state: UICellConfigurationState) {
+        super.updateConfiguration(using: state)
+        updateDefaultBackgroundConfiguration(using: state)
+    }
+}
+
+
+private extension HeadlineLabelTableViewCell {
+    func configureBackground() {
+        configureDefaultBackgroundConfiguration()
+    }
+
+    func configureHeadline() {
+        headlineLabel?.accessibilityIdentifier = "headline-label"
+    }
+
+    func configureBody() {
+        bodyLabel?.accessibilityIdentifier = "body-label"
+    }
+
+    func apply(style: Style) {
+        switch style {
+        case .compact:
+            headlineLabel?.applyHeadlineStyle()
+            bodyLabel?.applyBodyStyle()
+            headlineToBodyConstraint.constant = 0
+        case .subheadline:
+            headlineLabel?.applyBodyStyle()
+            bodyLabel?.applySubheadlineStyle()
+            bodyLabel?.textColor = .textSubtle
+            headlineToBodyConstraint.constant = Dimensions.margin
+        case .regular:
+            headlineLabel?.applyBodyStyle()
+            bodyLabel?.applySecondaryBodyStyle()
+            headlineToBodyConstraint.constant = Dimensions.margin
+        case .bodyWithLineLimit(let numberOfLines):
+            headlineLabel?.applyBodyStyle()
+            bodyLabel?.applySecondaryBodyStyle()
+            bodyLabel?.numberOfLines = numberOfLines
+            bodyLabel?.lineBreakMode = .byTruncatingTail
+            headlineToBodyConstraint.constant = 0
+        }
+
+        setNeedsLayout()
+    }
+}
+
+// MARK: - Constants
+
+private extension HeadlineLabelTableViewCell {
+    enum Dimensions {
+        static let margin: CGFloat = 8.0
+    }
+}
